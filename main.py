@@ -15,11 +15,11 @@ import numpy as np
 
 class TCPServerRequest(socketserver.BaseRequestHandler):
     def handle(self):
-        # Handle is called each time a client is connected
-        # When OpenDataCam connects, do not return - instead keep the connection open and keep streaming data
-        # First send HTTP header
-        header = 'HTTP/1.0 200 OK\r\nServer: Mozarella/2.2\r\nAccept-Range: bytes\r\nConnection: close\r\nMax-Age: 0\r\nExpires: 0\r\nCache-Control: no-cache, private\r\nPragma: no-cache\r\nContent-Type: application/json\r\n\r\n'
-        self.request.send(header.encode())
+        ## Handle is called each time a client is connected
+        ## When OpenDataCam connects, do not return - instead keep the connection open and keep streaming data
+        ## First send HTTP header
+        #header = 'HTTP/1.0 200 OK\r\nServer: Mozarella/2.2\r\nAccept-Range: bytes\r\nConnection: close\r\nMax-Age: 0\r\nExpires: 0\r\nCache-Control: no-cache, private\r\nPragma: no-cache\r\nContent-Type: application/json\r\n\r\n'
+        #self.request.send(header.encode())
         while True:
             sleep(0.1)
             if hasattr(self.server, 'datatosend'):
@@ -106,14 +106,14 @@ class BirdFrame():
 
 
 # start TCP data server
-server_TCP = socketserver.TCPServer(('192.168.222.3', 8070), TCPServerRequest)
+server_TCP = socketserver.TCPServer(('', 8070), TCPServerRequest)
 th = threading.Thread(target=server_TCP.serve_forever)
 th.daemon = True
 th.start()
 
 
 # start MJPEG HTTP Server
-server_HTTP = ThreadedHTTPServer(('192.168.222.3', 8090), VideoStreamHandler)
+server_HTTP = ThreadedHTTPServer(('', 8090), VideoStreamHandler)
 th2 = threading.Thread(target=server_HTTP.serve_forever)
 th2.daemon = True
 th2.start()
