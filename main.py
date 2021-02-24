@@ -50,14 +50,14 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 # start TCP data server
-server_TCP = socketserver.TCPServer(('localhost', 8070), TCPServerRequest)
+server_TCP = socketserver.TCPServer(('192.168.222.3', 8070), TCPServerRequest)
 th = threading.Thread(target=server_TCP.serve_forever)
 th.daemon = True
 th.start()
 
 
 # start MJPEG HTTP Server
-server_HTTP = ThreadedHTTPServer(('localhost', 8090), VideoStreamHandler)
+server_HTTP = ThreadedHTTPServer(('192.168.222.3', 8090), VideoStreamHandler)
 th2 = threading.Thread(target=server_HTTP.serve_forever)
 th2.daemon = True
 th2.start()
@@ -67,8 +67,11 @@ device = depthai.Device('', False)
 pipeline = device.create_pipeline(config={
     "streams": ["metaout", "previewout"],
     "ai": {
-        "blob_file": str(Path('./mobilenet-ssd/model.blob').resolve().absolute()),
-        "blob_file_config": str(Path('./mobilenet-ssd/config.json').resolve().absolute())
+        "calc_dist_to_bb": True,
+        #"blob_file": str(Path('./mobilenet-ssd/model.blob').resolve().absolute()),
+        #"blob_file_config": str(Path('./mobilenet-ssd/config.json').resolve().absolute())
+        "blob_file": str(Path('./person-detection-retail-0013/model.blob').resolve().absolute()),
+        "blob_file_config": str(Path('./person-detection-retail-0013/config.json').resolve().absolute())
     }
 })
 
