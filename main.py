@@ -6,12 +6,14 @@ from io import BytesIO
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from time import sleep
-import depthai
+import depthai as dai
 import cv2
 from PIL import Image
 import math
 import numpy as np
+import blobconverter
 
+HTTP_SERVER_PORT = 8090
 
 class TCPServerRequest(socketserver.BaseRequestHandler):
     def handle(self):
@@ -49,6 +51,19 @@ class VideoStreamHandler(BaseHTTPRequestHandler):
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""
     pass
+    
+# start TCP data server
+server_TCP = socketserver.TCPServer(('', 8070), TCPServerRequest)
+th = threading.Thread(target=server_TCP.serve_forever)
+th.daemon = True
+th.start()
+
+
+# start MJPEG HTTP Server
+server_HTTP = ThreadedHTTPServer(('', 8090), VideoStreamHandler)
+th2 = threading.Thread(target=server_HTTP.serve_forever)
+th2.daemon = True
+th2.start()
 
 class BirdFrame():
     max_z = 6
@@ -96,77 +111,105 @@ class BirdFrame():
 
     def parse_frame(self, frame, detections):
         bird_frame = self.distance_bird_frame.copy()
-
         for detection in detections:
-            left, right = self.calc_x(detection.depth_x)
-            top, bottom = self.calc_z(detection.depth_z)
+            left, right = self.calc_x(detection.spatialCoordinates.x / 1000)
+            top, bottom = self.calc_z(detection.spatialCoordinates.z / 1000)
             cv2.rectangle(bird_frame, (left, top), (right, bottom), (0, 255, 0), 2)
 
         return np.hstack((frame, bird_frame))
 
+def create_pipeline(model_name):
+    pipeline = dai.Pipeline()
+    #pipeline.setOpenVINOVersion(dai.OpenVINO.Version.VERSION_2021_4_2)
 
-# start TCP data server
-server_TCP = socketserver.TCPServer(('', 8070), TCPServerRequest)
-th = threading.Thread(target=server_TCP.serve_forever)
-th.daemon = True
-th.start()
+    # Define sources and outputs
+    camRgb = pipeline.createColorCamera()
+    spatialDetectionNetwork = pipeline.createMobileNetSpatialDetectionNetwork()
+    monoLeft = pipeline.createMonoCamera()
+    monoRight = pipeline.createMonoCamera()
+    stereo = pipeline.createStereoDepth()
 
+    xoutRgb = pipeline.createXLinkOut()
+    camRgb.preview.link(xoutRgb.input)
+    xoutNN = pipeline.createXLinkOut()
 
-# start MJPEG HTTP Server
-server_HTTP = ThreadedHTTPServer(('', 8090), VideoStreamHandler)
-th2 = threading.Thread(target=server_HTTP.serve_forever)
-th2.daemon = True
-th2.start()
+    xoutRgb.setStreamName("rgb")
+    xoutNN.setStreamName("detections")
 
-device = depthai.Device('', False)
+    # Properties
+    camRgb.setPreviewSize(544, 320)
+    camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+    camRgb.setInterleaved(False)
+    camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
 
-pipeline = device.create_pipeline(config={
-    "streams": ["metaout", "previewout"],
-    "ai": {
-        "calc_dist_to_bb": True,
-        #"blob_file": str(Path('./mobilenet-ssd/model.blob').resolve().absolute()),
-        #"blob_file_config": str(Path('./mobilenet-ssd/config.json').resolve().absolute())
-        "blob_file": str(Path('./person-detection-retail-0013/model.blob').resolve().absolute()),
-        "blob_file_config": str(Path('./person-detection-retail-0013/config.json').resolve().absolute())
-    }
-})
+    monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+    monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)
+    monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+    monoRight.setBoardSocket(dai.CameraBoardSocket.RIGHT)
 
-if pipeline is None:
-    raise RuntimeError("Error initializing pipelne")
+    # Setting node configs
+    stereo.initialConfig.setConfidenceThreshold(255)
 
-detections = []
-bf = BirdFrame()
+    spatialDetectionNetwork.setBlobPath(blobconverter.from_zoo(name=model_name, shaves=6))
+    #spatialDetectionNetwork.setBlobPath(blobconverter.from_zoo("person-detection-retail-0013", shaves=6))
+    spatialDetectionNetwork.setConfidenceThreshold(0.5)
+    spatialDetectionNetwork.input.setBlocking(False)
+    spatialDetectionNetwork.setBoundingBoxScaleFactor(0.5)
+    spatialDetectionNetwork.setDepthLowerThreshold(100)
+    spatialDetectionNetwork.setDepthUpperThreshold(5000)
 
-while True:
-    nnet_packets, data_packets = pipeline.get_available_nnet_and_data_packets()
+    # Linking
+    monoLeft.out.link(stereo.left)
+    monoRight.out.link(stereo.right)
 
-    for nnet_packet in nnet_packets:
-        detections = list(nnet_packet.getDetectedObjects())
+    camRgb.preview.link(spatialDetectionNetwork.input)
 
-    for packet in data_packets:
-        if packet.stream_name == 'previewout':
-            data = packet.getData()
-            data0 = data[0, :, :]
-            data1 = data[1, :, :]
-            data2 = data[2, :, :]
-            frame = cv2.merge([data0, data1, data2])
+    spatialDetectionNetwork.out.link(xoutNN.input)
+    stereo.depth.link(spatialDetectionNetwork.inputDepth)
 
-            img_h = frame.shape[0]
-            img_w = frame.shape[1]
+    return pipeline
+    
+# Pipeline is defined, now we can connect to the device
+with dai.Device() as device:
+    cams = device.getConnectedCameras()
+    depth_enabled = dai.CameraBoardSocket.LEFT in cams and dai.CameraBoardSocket.RIGHT in cams
 
-            for detection in detections:
-                left, top = int(detection.x_min * img_w), int(detection.y_min * img_h)
-                right, bottom = int(detection.x_max * img_w), int(detection.y_max * img_h)
+    # Start pipeline. Can select other NN here
+    device.startPipeline(create_pipeline("person-detection-retail-0013"))
 
-                cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+    print(f"DepthAI is up & running. Navigate to 'localhost:{str(HTTP_SERVER_PORT)}' with Chrome to see the mjpeg stream")
 
-            annotated_frame = bf.parse_frame(frame, detections)
-            server_TCP.datatosend = json.dumps([detection.get_dict() for detection in detections])
-            server_HTTP.frametosend = annotated_frame
-            cv2.imshow('previewout', annotated_frame)
+    # Output queues will be used to get the rgb frames and nn data from the outputs defined above
+    previewQueue = device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
+    detectionNNQueue = device.getOutputQueue(name="detections", maxSize=4, blocking=False)
 
-    if cv2.waitKey(1) == ord('q'):
-        break
+    detections = []
+    bf = BirdFrame()
+
+    while True:
+        frame = previewQueue.get().getCvFrame()
+        inDet = detectionNNQueue.tryGet()
+        
+        if inDet is not None:
+    	    detections = inDet.detections
+
+        img_h = frame.shape[0]
+        img_w = frame.shape[1]
+        for detection in detections:
+            print(detection)
+            left, top = int(detection.xmin * img_w), int(detection.ymin * img_h)
+            right, bottom = int(detection.xmax * img_w), int(detection.ymax * img_h)
+
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+
+        annotated_frame = bf.parse_frame(frame, detections)
+        #server_TCP.datatosend = json.dumps([detection.get_dict() for detection in detections])
+        server_TCP.datatosend = json.dumps([detection.getData() for detection in detections])
+        server_HTTP.frametosend = annotated_frame
+        cv2.imshow('previewout', annotated_frame)
+
+        if cv2.waitKey(1) == ord('q'):
+            break
 
 del pipeline
 del device

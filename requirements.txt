@@ -1,4 +1,5 @@
-Pillow==8.1.0
+Pillow==9.0.0
 opencv-python==4.5.1.48
---extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-snapshot-local/
-depthai==0.4.1.1+91ba9cbf941592371a7246887a491f0c82632e9d
+depthai==2.13.3.0
+blobconverter==1.2.8
+openvino
