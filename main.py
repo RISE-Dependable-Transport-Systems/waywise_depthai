@@ -151,7 +151,6 @@ def create_pipeline(model_name):
     stereo.initialConfig.setConfidenceThreshold(255)
 
     spatialDetectionNetwork.setBlobPath(blobconverter.from_zoo(name=model_name, shaves=6))
-    #spatialDetectionNetwork.setBlobPath(blobconverter.from_zoo("person-detection-retail-0013", shaves=6))
     spatialDetectionNetwork.setConfidenceThreshold(0.5)
     spatialDetectionNetwork.input.setBlocking(False)
     spatialDetectionNetwork.setBoundingBoxScaleFactor(0.5)
@@ -196,15 +195,13 @@ with dai.Device() as device:
         img_h = frame.shape[0]
         img_w = frame.shape[1]
         for detection in detections:
-            print(detection)
             left, top = int(detection.xmin * img_w), int(detection.ymin * img_h)
             right, bottom = int(detection.xmax * img_w), int(detection.ymax * img_h)
 
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
 
         annotated_frame = bf.parse_frame(frame, detections)
-        #server_TCP.datatosend = json.dumps([detection.get_dict() for detection in detections])
-        server_TCP.datatosend = json.dumps([detection.getData() for detection in detections])
+        server_TCP.datatosend = json.dumps([dict(label = detection.label, confidence = detection.confidence, x_min = detection.xmin, y_min = detection.ymin, x_max = detection.xmax, y_max = detection.ymax, depth_x = (detection.spatialCoordinates.x / 1000), depth_y = (detection.spatialCoordinates.y / 1000), depth_z = (detection.spatialCoordinates.z / 1000)) for detection in detections])
         server_HTTP.frametosend = annotated_frame
         cv2.imshow('previewout', annotated_frame)
 
