@@ -7,11 +7,11 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from time import sleep
 import depthai as dai
-import cv2
 from PIL import Image
 import math
 import numpy as np
 import blobconverter
+import cv2
 
 HTTP_SERVER_PORT = 8090
 
@@ -203,7 +203,7 @@ with dai.Device() as device:
         annotated_frame = bf.parse_frame(frame, detections)
         server_TCP.datatosend = json.dumps([dict(label = detection.label, confidence = detection.confidence, x_min = detection.xmin, y_min = detection.ymin, x_max = detection.xmax, y_max = detection.ymax, depth_x = (detection.spatialCoordinates.x / 1000), depth_y = (detection.spatialCoordinates.y / 1000), depth_z = (detection.spatialCoordinates.z / 1000)) for detection in detections])
         server_HTTP.frametosend = annotated_frame
-        cv2.imshow('previewout', annotated_frame)
+        #cv2.imshow('previewout', annotated_frame)
 
         if cv2.waitKey(1) == ord('q'):
             break
