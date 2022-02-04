@@ -14,6 +14,7 @@ import blobconverter
 import cv2
 
 HTTP_SERVER_PORT = 8090
+HTTP_SERVER_PORT2 = 8080
 
 class TCPServerRequest(socketserver.BaseRequestHandler):
     def handle(self):
@@ -65,6 +66,16 @@ th2 = threading.Thread(target=server_HTTP.serve_forever)
 th2.daemon = True
 th2.start()
 
+# start second MJPEG HTTP Server
+server2_HTTP = ThreadedHTTPServer(('', 8080), VideoStreamHandler)
+th3 = threading.Thread(target=server2_HTTP.serve_forever)
+th3.daemon = True
+th3.start()
+
+# MobilenetSSD label texts
+labelMap = ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow",
+            "diningtable", "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
+
 class BirdFrame():
     max_z = 6
     min_z = 0
@@ -77,7 +88,7 @@ class BirdFrame():
     def make_bird_frame(self):
         fov = 68.7938
         min_distance = 0.827
-        frame = np.zeros((320, 100, 3), np.uint8)
+        frame = np.zeros((300, 100, 3), np.uint8) # Match size with selected network
         min_y = int((1 - (min_distance - self.min_z) / (self.max_z - self.min_z)) * frame.shape[0])
         cv2.rectangle(frame, (0, min_y), (frame.shape[1], frame.shape[0]), (70, 70, 70), -1)
 
@@ -137,7 +148,7 @@ def create_pipeline(model_name):
     xoutNN.setStreamName("detections")
 
     # Properties
-    camRgb.setPreviewSize(544, 320)
+    camRgb.setPreviewSize(300, 300) #Change input image size according to network documentation  https://docs.openvino.ai/latest/model_zoo.html
     camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
     camRgb.setInterleaved(False)
     camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
@@ -173,10 +184,10 @@ with dai.Device() as device:
     cams = device.getConnectedCameras()
     depth_enabled = dai.CameraBoardSocket.LEFT in cams and dai.CameraBoardSocket.RIGHT in cams
 
-    # Start pipeline. Can select other NN here
-    device.startPipeline(create_pipeline("person-detection-retail-0013"))
+    # Start pipeline. 
+    device.startPipeline(create_pipeline("mobilenet-ssd")) # Select network from here https://docs.openvino.ai/latest/model_zoo.html
 
-    print(f"DepthAI is up & running. Navigate to 'localhost:{str(HTTP_SERVER_PORT)}' with Chrome to see the mjpeg stream")
+    print(f"DepthAI is up & running. Navigate to 'localhost:{str(HTTP_SERVER_PORT)}' and 'localhost:{str(HTTP_SERVER_PORT2)}' with Chrome to see the mjpeg stream")
 
     # Output queues will be used to get the rgb frames and nn data from the outputs defined above
     previewQueue = device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
@@ -184,9 +195,11 @@ with dai.Device() as device:
 
     detections = []
     bf = BirdFrame()
+    color = (255, 255, 255)
 
     while True:
         frame = previewQueue.get().getCvFrame()
+        server2_HTTP.frametosend = previewQueue.get().getCvFrame()
         inDet = detectionNNQueue.tryGet()
         
         if inDet is not None:
@@ -197,6 +210,13 @@ with dai.Device() as device:
         for detection in detections:
             left, top = int(detection.xmin * img_w), int(detection.ymin * img_h)
             right, bottom = int(detection.xmax * img_w), int(detection.ymax * img_h)
+
+            try:
+                label = labelMap[detection.label]
+            except:
+                label = detection.label
+            cv2.putText(frame, str(label), (left + 10, top + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.5, color)
+            cv2.putText(frame, "{:.2f}".format(detection.confidence*100), (right + 10, top + 35), cv2.FONT_HERSHEY_TRIPLEX, 0.5, color)
 
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
 
