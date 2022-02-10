@@ -13,7 +13,7 @@ sudo wget -qO- https://docs.luxonis.com/install_dependencies.sh | bash
 Raspberry Pi OS:
 sudo curl -fL https://docs.luxonis.com/install_dependencies.sh | bash
 
-python3 -m pip install -r requirements.txt
+./install.sh
 ```
 
 ## Usage
@@ -21,7 +21,7 @@ python3 -m pip install -r requirements.txt
 Run the application
 
 ```
-python3 main.py
+./camerastart.sh
 ```
 
 To see the streamed frames, open [localhost:8090](http://localhost:8090)
