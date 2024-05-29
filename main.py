@@ -141,11 +141,16 @@ def create_pipeline(model_name):
     camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
     camRgb.setInterleaved(False)
     camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
+    camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
 
     monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-    monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)
+    monoLeft.setBoardSocket(dai.CameraBoardSocket.CAM_B)
     monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-    monoRight.setBoardSocket(dai.CameraBoardSocket.RIGHT)
+    monoRight.setBoardSocket(dai.CameraBoardSocket.CAM_C)
+
+    # LR-check is required for depth alignment
+    stereo.setLeftRightCheck(True)
+    stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
 
     # Setting node configs
     stereo.initialConfig.setConfidenceThreshold(255)
@@ -171,7 +176,7 @@ def create_pipeline(model_name):
 # Pipeline is defined, now we can connect to the device
 with dai.Device() as device:
     cams = device.getConnectedCameras()
-    depth_enabled = dai.CameraBoardSocket.LEFT in cams and dai.CameraBoardSocket.RIGHT in cams
+    depth_enabled = dai.CameraBoardSocket.CAM_B in cams and dai.CameraBoardSocket.CAM_B in cams
 
     # Start pipeline. Can select other NN here
     device.startPipeline(create_pipeline("person-detection-retail-0013"))
